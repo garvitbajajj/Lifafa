@@ -1,0 +1,24 @@
+{
+  "name": "lifafa",
+  "private": true,
+  "type": "module",
+  "description": "Offline UPI payments carried over a mesh of nearby phones and settled exactly once.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}

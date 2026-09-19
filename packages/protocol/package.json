@@ -1,0 +1,10 @@
+{
+  "name": "@lifafa/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The envelope format and its cryptography. No runtime dependencies beyond node:crypto.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
