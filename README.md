@@ -6,8 +6,8 @@
 only the settlement service can open, hands it to whatever phone is nearby, and it hops from phone
 to phone until one of them reaches the network and delivers it.
 
-Written in TypeScript on Node 22, PostgreSQL, Express and React.
-A complete earlier implementation in Java and Spring Boot is at
+TypeScript on Node 22, with PostgreSQL, Express and React.
+An earlier implementation in Java and Spring Boot is at
 [garvitbajajj/Lifafa1.0](https://github.com/garvitbajajj/Lifafa1.0).
 
 ---
@@ -15,19 +15,19 @@ A complete earlier implementation in Java and Spring Boot is at
 ## The problem
 
 A payment that needs connectivity fails exactly when connectivity does — a basement shop, a power
-cut, a train, a village with one bar of signal. The idea of carrying payments over nearby phones
-is old; the reason it is hard is not the radio, it is what happens after:
+cut, a train, a village with one bar of signal. Carrying payments over nearby phones is an old
+idea; the hard part is not the radio, it is everything after it:
 
 1. **The carriers are strangers.** They must not be able to read the payment, change it, or learn
    who is paying.
-2. **Many of them deliver the same payment.** You cannot rely on any one phone to reach the
+2. **Many of them deliver the same payment.** No single phone can be relied on to reach the
    network, so several carry the same envelope and all of them upload it. One payment, five
    deliveries, and the money must move exactly once — including when the service crashes midway.
 3. **Any of them can keep a copy.** A carrier who stores an envelope must not be able to extract
    anything from it, replay it, or use it later.
 
-Lifafa is built around these three, and each one is enforced in code and proven by tests rather
-than described in prose.
+Each of these is answered by a mechanism, and each mechanism is enforced in code and demonstrated
+by tests rather than asserted in prose.
 
 ## How a payment moves
 
@@ -44,64 +44,98 @@ than described in prose.
                                              ◀── settled / refused, signed receipt
 ```
 
-1. **Sign, then seal.** The device signs a canonical binary encoding of the payment with its
-   Ed25519 key, then encrypts the signed bytes to the service's X25519 key using
-   [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE. Signing *first* puts the signature
-   inside the ciphertext, so carriers cannot even see who is paying. A sealed envelope is 259 bytes.
-2. **Carry.** Phones gossip envelopes to neighbours. They see opaque bytes and a hop count.
-3. **Deliver.** Any phone with connectivity uploads what it holds, and keeps its copy until the
-   service returns a decision.
-4. **Settle exactly once.** The service decides each *payment intent* — `senderVpa/nonce`, taken
-   from inside the signature — once, no matter how many copies arrive or in what order.
+**1 — Sign, then seal.** The device signs a canonical binary encoding of the payment with its
+Ed25519 key, then encrypts the signed bytes to the service's X25519 key using
+[RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE. Signing *first* puts the signature inside
+the ciphertext, so carriers cannot see who is paying, let alone the amount. A sealed envelope is
+259 bytes.
 
-## Design decisions
+**2 — Carry.** Phones gossip envelopes to neighbours they have not already handed them to. A
+carrier sees opaque bytes and a hop count.
 
-| Decision | Why |
+**3 — Deliver.** Any phone with connectivity uploads what it holds, and keeps its copy until the
+service returns a decision, so a payment is never dropped on the assumption that someone else
+delivered it.
+
+**4 — Settle exactly once.** The service decides each *payment intent* — `senderVpa/nonce`, taken
+from inside the signature — once, however many copies arrive and in whatever order.
+
+## The mechanisms
+
+### Confidentiality: HPKE, not RSA
+
+The payer has no connectivity, so there is no handshake to negotiate a key. HPKE solves exactly
+that: the device generates a throwaway X25519 keypair, does Diffie-Hellman against the service's
+public key, and derives a one-time AES-256-GCM key. The throwaway public key travels in the
+envelope so the service can repeat the computation from its side.
+
+RSA-2048 key wrap, the obvious alternative, costs 256 bytes per envelope against X25519's 32 — on
+a link where every hop re-sends the payload, that difference is most of the envelope.
+
+The envelope header (magic, version, suite, key id, ephemeral key) is not encrypted — the service
+must read the key id to know which key to use — but it is passed to AES-GCM as associated data, so
+it is authenticated: a carrier who rewrites any of it produces an envelope that fails to open.
+
+### Exactly-once settlement: claim the intent, not the packet
+
+The idempotency key is `senderVpa/nonce`, and both live inside the signature, so no carrier can
+change them and every copy of one payment carries the same key. Deduplicating on a hash of the
+ciphertext instead would miss the common case: re-sealing one payment uses a fresh ephemeral key,
+so every byte on the wire differs.
+
+Settlement is a durable two-phase claim. The first delivery to arrive claims the intent in the
+database under a short lease; the ledger postings and the decision commit in one transaction, so a
+crash cannot leave a half-payment behind. Later copies receive the decision that was already made.
+A transient failure releases the claim, and an expired lease can be taken over, so a process dying
+mid-settlement delays a payment rather than losing it. The journal carries a unique constraint on
+the idempotency key as a last line of defence, so even a bug in the claim layer cannot post twice.
+
+### Integrity of the money: a double-entry ledger in paise
+
+Amounts are integers in paise — no floating point anywhere near money. Every movement is a journal
+entry whose postings sum to zero, balances are a projection of those postings, and an invariant
+check re-derives them, so money cannot be created or destroyed unnoticed. Funds enter from a house
+account, so even issued money has a matching posting.
+
+### Bounded offline risk
+
+A payer with no connectivity can sign two payments against the same balance; nothing but trusted
+hardware can prevent it. So it is bounded instead: each device has an offline allowance that only
+an operator can refill while the device is online, plus a cap per payment. Each instruction also
+carries a device sequence number, and the same number used for a different payment means a cloned
+key, which revokes the device.
+
+### Freshness and rotation
+
+An envelope is valid until the earlier of the payer's own expiry and the service's maximum packet
+age, so a stored copy cannot be delivered indefinitely. Keys are a ring rather than a single key:
+each envelope names the key it was sealed to, so the service can rotate without stranding payments
+already in the mesh — and a restart cannot make in-flight payments unreadable.
+
+## Verification
+
+The cryptography is checked against the specifications' own published test vectors, not only
+against itself:
+
+- **RFC 5869** — the three HKDF-SHA256 test cases.
+- **RFC 9180 appendix A.1** — every intermediate value for HPKE base mode: both derived keypairs,
+  the encapsulation, the shared secret, the key schedule context, key, base nonce and exporter
+  secret, six ciphertexts across a nonce carry, and three exported values.
+
+A round-trip test proves only that code agrees with itself, which is as true of a correct
+implementation as of one that derives the wrong key everywhere consistently. Matching the RFC's
+numbers rules that out.
+
+The envelope's guarantees are tested directly: a sealed envelope contains none of the VPAs, the
+amount or the nonce; flipping any single ciphertext bit fails the tag; two seals of one payment
+carry one idempotency key; a forged signature or an edited amount is rejected; an envelope sealed
+before a key rotation still opens afterwards, and stops only once that key is retired.
+
+## In this repo
+
+| Path | Contents |
 |---|---|
-| **HPKE (X25519 + AES-256-GCM), not RSA** | RSA-2048 key wrap costs 256 bytes per envelope; an X25519 ephemeral key costs 32. On a link where every hop re-sends the payload, that is most of the envelope. |
-| **Verified against the RFC's own test vectors** | A round-trip test only proves the code agrees with itself — equally true of a correct implementation and of one that derives the wrong key consistently. The test suite reproduces every intermediate value RFC 9180 publishes. |
-| **Deduplicate on the payment intent, not the packet** | Re-sealing one payment produces completely different bytes, so hashing the ciphertext lets a re-send settle twice. |
-| **Canonical binary encoding, not JSON** | A signature covers bytes. JSON has many byte representations of one value; a canonical encoding has exactly one. |
-| **Amounts as integer paise** | No floating point anywhere near money. |
-| **Double-entry ledger** | Every movement is postings that sum to zero, so money cannot be created or destroyed unnoticed, and a drift is detectable rather than invisible. |
-| **Keys are a ring, not a key** | A payment can sit in the mesh for hours. Envelopes name the key they were sealed to, so keys rotate without stranding anything in flight. |
-
-## Build status
-
-Built in stages, each proven before the next begins.
-
-| Stage | Contents | Status |
-|---|---|---|
-| 1 | **Protocol** — envelope format, HPKE, Ed25519 signatures, canonical encoding, key ring, receipts | ✅ Complete — 50 tests |
-| 2 | **Ledger** — PostgreSQL schema and migrations, double-entry postings, invariant checker | In progress |
-| 3 | **Settlement** — durable claims, device registry, offline spending limits, ingest pipeline | Planned |
-| 4 | **API** — Express routes, bridge credentials, rate limiting, operator authentication | Planned |
-| 5 | **Mesh simulation** — gossip over sparse topologies with packet loss and partitions | Planned |
-| 6 | **Attack scenarios** — named, runnable attacks that fail the build if a defence stops holding | Planned |
-| 7 | **React dashboard** — watch a payment cross the mesh and settle | Planned |
-| 8 | **Docker, CI, threat model** | Planned |
-
-### What stage 1 proves today
-
-- **Carriers cannot read a payment.** A test scans the sealed envelope for the VPAs, the amount and
-  the nonce, and finds none of them.
-- **Carriers cannot alter one.** Flipping any single bit of the ciphertext fails the AES-GCM tag;
-  the header is authenticated too, so the version, suite and key id cannot be rewritten either.
-- **Two copies of one payment are recognisably one payment.** Sealing the same signed instruction
-  twice produces two different envelopes that still carry the same idempotency key.
-- **A forged or edited payment is rejected.** Changing the amount, or signing with another device
-  while claiming someone else's public key, fails the signature check.
-- **Key rotation strands nothing.** An envelope sealed before a rotation still opens afterwards,
-  and stops opening only once its key is deliberately retired.
-- **The cryptography matches the specification.** The suite reproduces the RFC 5869 HKDF vectors
-  and every published value in RFC 9180 appendix A.1 — derived keypairs, shared secret, key
-  schedule context, six ciphertexts across a nonce carry, and three exported values.
-
-## Layout
-
-| Path | What |
-|---|---|
-| `packages/protocol` | The envelope and its cryptography. No dependencies beyond `node:crypto`, so it could be ported to a phone. |
+| `packages/protocol` | The envelope format and its cryptography — HPKE, Ed25519 signatures, canonical encoding, the key ring and signed receipts. No dependencies beyond `node:crypto`, so it could be ported to a phone. 50 tests. |
 
 ## Running it
 
@@ -119,12 +153,12 @@ npm run check
 
 ## Scope
 
-This is a research prototype of the settlement mechanism, not a payment product. It is not
-connected to NPCI, a bank, or any real UPI rail — the ledger is its own. There is no Android app
-and no Bluetooth transport; the mesh is simulated. The cryptography follows RFC 9180 and is checked
-against its test vectors, but it is a from-scratch composition of primitives that no third party
-has reviewed, and it does not provide forward secrecy. A full threat model, including the
-limitations, lands in stage 8.
+A research prototype of the settlement mechanism, not a payment product. It is not connected to
+NPCI, a bank, or any real UPI rail — the ledger is its own. There is no Android app and no
+Bluetooth transport; the mesh is simulated. The cryptography follows RFC 9180 and matches its test
+vectors, but it is a from-scratch composition of primitives that no third party has reviewed, and
+it does not provide forward secrecy: anyone who records envelopes and later obtains the service's
+private key can read them, which is inherent to a payer who cannot run an interactive key exchange.
 
 ## Licence
 
