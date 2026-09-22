@@ -13,6 +13,9 @@ export class DeviceAgent {
 
   constructor({ identity = DeviceIdentity.generate(), vpa, serverPublicKey, serverKeyId, now = () => Date.now() }) {
     this.#identity = identity;
+    // Exposed so a simulation can build a second agent on the same key - one phone claiming to
+    // pay from an account it is not bound to, for instance.
+    this.identity = identity;
     this.vpa = vpa;
     this.deviceId = identity.deviceId;
     this.publicKey = identity.publicKey;

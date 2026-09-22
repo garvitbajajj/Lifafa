@@ -6,7 +6,8 @@
   "description": "The settlement service: ledger, claims and the HTTP API.",
   "main": "./src/index.js",
   "scripts": {
-    "migrate": "node src/db/migrate.js"
+    "migrate": "node src/db/migrate.js",
+    "scenarios": "node src/scenarios/run.js"
   },
   "dependencies": {
     "@lifafa/protocol": "*",

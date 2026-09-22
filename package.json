@@ -14,7 +14,8 @@
   "scripts": {
     "test": "vitest run",
     "check": "vitest run",
-    "migrate": "npm run migrate -w @lifafa/server"
+    "migrate": "npm run migrate -w @lifafa/server",
+    "scenarios": "npm run scenarios -w @lifafa/server --"
   },
   "devDependencies": {
     "embedded-postgres": "^18.4.0-beta.17",

@@ -166,6 +166,39 @@ npm run migrate
 Every table lives in the `lifafa` schema, so the database can be shared with other projects. On
 Supabase that also keeps these tables out of the auto-generated API, which only exposes `public`.
 
+## Attack scenarios
+
+Every defence above is a scenario you can run against a real settlement service. It fails the
+build if a defence stops holding, so none of this is a claim that only lives in a README.
+
+```bash
+npm run scenarios -- list
+```
+
+```bash
+npm run scenarios -- all
+```
+
+| Scenario | What it attacks |
+|---|---|
+| `duplicate-storm` | Eight bridges deliver one envelope at once |
+| `reseal-retry` | The payer re-seals one payment into completely different bytes |
+| `forge-sender` | A device the service never registered tries to pay |
+| `wrong-account` | A registered device pays from an account it is not bound to |
+| `tamper-envelope` | A carrier flips a bit in transit |
+| `replay-expired` | A stored envelope is delivered after it expires |
+| `double-spend` | Two payments signed offline against one balance |
+| `over-cap` | A single offline payment above the per-payment cap |
+| `allowance-exhausted` | Spending past the offline allowance, with the balance to cover it |
+| `insufficient-funds` | A payment beyond the balance, then delivered again |
+| `key-rotation` | Envelopes in flight when the settlement key rotates |
+| `crash-mid-settle` | A delivery dies holding the claim |
+| `mesh-journey` | A lossy, partitioned mesh, then two bridges delivering the same payment |
+| `revoked-device` | A revoked device with a perfectly valid signature |
+
+After each one the ledger is re-derived from its postings: an attack that left the books unbalanced
+fails even if its own assertion passed.
+
 ## API
 
 Two audiences with different credentials. Only the settlement key and ingest are public, because
