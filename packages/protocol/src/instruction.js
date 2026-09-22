@@ -1,25 +1,20 @@
-import type { Bytes } from './bytes.ts';
-import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.ts';
+import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.js';
 
 /**
  * What the payer signs: pay this much, to this person, and here is how to recognise it later.
  *
  * Amounts are integer paise (1 rupee = 100 paise). Never floating point: 0.1 + 0.2 is not 0.3,
  * and a ledger that rounds is a ledger that leaks.
+ *
+ * @typedef {object} PaymentInstruction
+ * @property {string} senderVpa
+ * @property {string} receiverVpa
+ * @property {number} amountPaise
+ * @property {string} nonce          random per payment; with senderVpa it names the payment
+ * @property {number} deviceSequence per-device counter; reuse for a different payment is a clone
+ * @property {number} signedAt       epoch milliseconds
+ * @property {number} expiresAt      epoch milliseconds; the service may impose a tighter bound
  */
-export interface PaymentInstruction {
-  readonly senderVpa: string;
-  readonly receiverVpa: string;
-  readonly amountPaise: number;
-  /** Random per payment. Together with senderVpa it names the payment - its idempotency key. */
-  readonly nonce: string;
-  /** Per-device counter. Reusing one for a different payment is how a cloned key is caught. */
-  readonly deviceSequence: number;
-  /** Epoch milliseconds. */
-  readonly signedAt: number;
-  /** Epoch milliseconds. The payer's own deadline; the service may impose a tighter one. */
-  readonly expiresAt: number;
-}
 
 /**
  * A VPA is name@handle. The pattern is strict on purpose: VPAs end up in the database, in logs
@@ -30,8 +25,8 @@ const VPA = /^[A-Za-z0-9._-]{2,48}@[A-Za-z0-9.-]{2,15}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** Validates every field. Throws MalformedError, so decoding and construction fail the same way. */
-export function paymentInstruction(fields: PaymentInstruction): PaymentInstruction {
-  const problem = (message: string): never => {
+export function paymentInstruction(fields) {
+  const problem = (message) => {
     throw new MalformedError(message);
   };
   if (!VPA.test(fields.senderVpa)) problem('senderVpa is not a well-formed VPA');
@@ -42,16 +37,23 @@ export function paymentInstruction(fields: PaymentInstruction): PaymentInstructi
   if (!Number.isSafeInteger(fields.deviceSequence) || fields.deviceSequence < 1) problem('deviceSequence must be a positive integer');
   if (!Number.isSafeInteger(fields.signedAt) || fields.signedAt < 0) problem('signedAt must be epoch milliseconds');
   if (!Number.isSafeInteger(fields.expiresAt) || fields.expiresAt <= fields.signedAt) problem('expiresAt must be after signedAt');
-  return Object.freeze({ ...fields });
+  return Object.freeze({
+    senderVpa: fields.senderVpa,
+    receiverVpa: fields.receiverVpa,
+    amountPaise: fields.amountPaise,
+    nonce: fields.nonce,
+    deviceSequence: fields.deviceSequence,
+    signedAt: fields.signedAt,
+    expiresAt: fields.expiresAt,
+  });
 }
 
 /** Names the payment, not the packet. Every re-send and re-seal of one payment shares it. */
-export const idempotencyKey = (instruction: PaymentInstruction): string =>
-  `${instruction.senderVpa}/${instruction.nonce}`;
+export const idempotencyKey = (instruction) => `${instruction.senderVpa}/${instruction.nonce}`;
 
 export const INSTRUCTION_VERSION = 1;
 
-export function encodeInstruction(instruction: PaymentInstruction): Bytes {
+export function encodeInstruction(instruction) {
   return new CanonicalWriter()
     .u8(INSTRUCTION_VERSION)
     .string(instruction.senderVpa)
@@ -64,7 +66,7 @@ export function encodeInstruction(instruction: PaymentInstruction): Bytes {
     .toBytes();
 }
 
-export function decodeInstruction(bytes: Bytes): PaymentInstruction {
+export function decodeInstruction(bytes) {
   const reader = new CanonicalReader(bytes);
   const version = reader.u8();
   if (version !== INSTRUCTION_VERSION) throw new MalformedError(`unsupported instruction version ${version}`);

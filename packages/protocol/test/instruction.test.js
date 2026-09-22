@@ -1,17 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { MalformedError } from '../src/canonical.ts';
-import {
-  type PaymentInstruction,
-  decodeInstruction,
-  encodeInstruction,
-  idempotencyKey,
-  paymentInstruction,
-} from '../src/instruction.ts';
+import { MalformedError } from '../src/canonical.js';
+import { decodeInstruction, encodeInstruction, idempotencyKey, paymentInstruction } from '../src/instruction.js';
 
 const now = Date.parse('2026-09-19T10:00:00Z');
 
-const valid = (overrides: Partial<PaymentInstruction> = {}): PaymentInstruction => ({
+const valid = (overrides = {}) => ({
   senderVpa: 'alice@lifafa',
   receiverVpa: 'bob@lifafa',
   amountPaise: 50_000,
@@ -68,8 +62,7 @@ describe('PaymentInstruction', () => {
 
   it('rejects trailing bytes, so no instruction has two valid encodings', () => {
     const bytes = encodeInstruction(paymentInstruction(valid()));
-    const padded = new Uint8Array([...bytes, 0]);
-    expect(() => decodeInstruction(padded)).toThrow(/trailing/);
+    expect(() => decodeInstruction(new Uint8Array([...bytes, 0]))).toThrow(/trailing/);
   });
 
   it('rejects truncation anywhere', () => {

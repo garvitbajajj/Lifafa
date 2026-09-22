@@ -13,12 +13,9 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json",
-    "check": "npm run typecheck && npm test"
+    "check": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "^22.20.4",
-    "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   }
 }

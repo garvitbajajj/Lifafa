@@ -1,5 +1,5 @@
-import { type Bytes, concat, equalConstantTime, hex, sha256, utf8 } from './bytes.ts';
-import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.ts';
+import { concat, equalConstantTime, hex, sha256, utf8 } from './bytes.js';
+import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.js';
 
 /**
  * The lifafa itself: a sealed envelope any phone may carry and only the settlement service may open.
@@ -19,14 +19,14 @@ import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.ts
  *
  * The version and suite bytes exist so the format can change later without stranding envelopes
  * already in the mesh. The key id exists so the service can rotate keys for the same reason.
+ *
+ * @typedef {object} Envelope
+ * @property {number} version
+ * @property {number} suite
+ * @property {number} serverKeyId
+ * @property {Uint8Array} enc
+ * @property {Uint8Array} ciphertext
  */
-export interface Envelope {
-  readonly version: number;
-  readonly suite: number;
-  readonly serverKeyId: number;
-  readonly enc: Bytes;
-  readonly ciphertext: Bytes;
-}
 
 export const MAGIC = utf8('LFFA');
 export const VERSION_1 = 1;
@@ -38,7 +38,7 @@ const ENC_BYTES = 32;
 const TAG_BYTES = 16;
 
 /** The authenticated header: everything before the ciphertext. */
-export function header(envelope: Pick<Envelope, 'version' | 'suite' | 'serverKeyId' | 'enc'>): Bytes {
+export function header(envelope) {
   return new CanonicalWriter()
     .raw(MAGIC)
     .u8(envelope.version)
@@ -48,9 +48,9 @@ export function header(envelope: Pick<Envelope, 'version' | 'suite' | 'serverKey
     .toBytes();
 }
 
-export const encodeEnvelope = (envelope: Envelope): Bytes => concat(header(envelope), envelope.ciphertext);
+export const encodeEnvelope = (envelope) => concat(header(envelope), envelope.ciphertext);
 
-export function decodeEnvelope(wire: Bytes): Envelope {
+export function decodeEnvelope(wire) {
   if (wire.length > MAX_ENVELOPE_BYTES) throw new MalformedError(`envelope over ${MAX_ENVELOPE_BYTES} bytes`);
   const reader = new CanonicalReader(wire);
   if (!equalConstantTime(reader.raw(MAGIC.length), MAGIC)) throw new MalformedError('not a lifafa envelope');
@@ -72,4 +72,4 @@ export function decodeEnvelope(wire: Bytes): Envelope {
  * have different fingerprints. Deduplicating on this is the mistake the reference project made:
  * re-sending the same payment settled it twice.
  */
-export const fingerprint = (wire: Bytes): string => hex(sha256(wire));
+export const fingerprint = (wire) => hex(sha256(wire));

@@ -1,20 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { utf8 } from '../src/bytes.ts';
-import { encodeEnvelope, fingerprint } from '../src/envelope.ts';
-import { DeviceIdentity } from '../src/identity.ts';
-import { idempotencyKey, paymentInstruction, type PaymentInstruction } from '../src/instruction.ts';
-import { ServerKeyRing } from '../src/keyring.ts';
-import { signReceipt, verifyReceipt } from '../src/receipt.ts';
-import { type FailureReason, type OpenResult, open, seal, sealSigned } from '../src/sealer.ts';
-import { signInstruction } from '../src/signed.ts';
+import { utf8 } from '../src/bytes.js';
+import { encodeEnvelope, fingerprint } from '../src/envelope.js';
+import { DeviceIdentity } from '../src/identity.js';
+import { idempotencyKey, paymentInstruction } from '../src/instruction.js';
+import { ServerKeyRing } from '../src/keyring.js';
+import { signReceipt, verifyReceipt } from '../src/receipt.js';
+import { open, seal, sealSigned } from '../src/sealer.js';
+import { signInstruction } from '../src/signed.js';
 
 const KEY_ID = 7;
 const now = Date.parse('2026-09-19T10:00:00Z');
 
-let ring: ServerKeyRing;
-let alicePhone: DeviceIdentity;
-let instruction: PaymentInstruction;
+let ring;
+let alicePhone;
+let instruction;
 
 beforeEach(() => {
   ring = ServerKeyRing.generate(KEY_ID);
@@ -30,23 +30,22 @@ beforeEach(() => {
   });
 });
 
-const sealed = (): Uint8Array => encodeEnvelope(seal(instruction, alicePhone, ring.current().publicKey, KEY_ID));
+const sealed = () => encodeEnvelope(seal(instruction, alicePhone, ring.current().publicKey, KEY_ID));
 
-function expectFailure(result: OpenResult, reason: FailureReason): void {
+function expectFailure(result, reason) {
   expect(result.ok).toBe(false);
-  if (!result.ok) expect(result.reason).toBe(reason);
+  expect(result.reason).toBe(reason);
 }
 
 describe('problem 1: a carrier cannot read or alter the payment', () => {
   it('a sealed envelope opens back to the same instruction and device', () => {
     const result = open(sealed(), ring);
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
     expect(result.signed.instruction).toEqual(instruction);
     expect(result.signed.devicePublicKey).toEqual(alicePhone.publicKey);
   });
 
-  it('nothing readable appears in the envelope: not the VPAs, not the amount', () => {
+  it('nothing readable appears in the envelope: not the VPAs, not the nonce', () => {
     const wire = Buffer.from(sealed());
     for (const secret of ['alice@lifafa', 'bob@lifafa', instruction.nonce]) {
       expect(wire.includes(Buffer.from(secret))).toBe(false);
@@ -57,18 +56,15 @@ describe('problem 1: a carrier cannot read or alter the payment', () => {
     const wire = sealed();
     for (let i = 44; i < wire.length; i++) {
       const tampered = Uint8Array.from(wire);
-      tampered[i] = (tampered[i] ?? 0) ^ 0x01;
+      tampered[i] ^= 0x01;
       expectFailure(open(tampered, ring), 'DECRYPT_FAILED');
     }
   });
 
   it('rewriting the authenticated header fails too, not just the ciphertext', () => {
-    const wire = sealed();
-    // The enc bytes: changing them yields a different shared secret, so the tag fails.
-    const tampered = Uint8Array.from(wire);
-    tampered[20] = (tampered[20] ?? 0) ^ 0x01;
-    const result = open(tampered, ring);
-    expect(result.ok).toBe(false);
+    const tampered = Uint8Array.from(sealed());
+    tampered[20] ^= 0x01; // inside enc, which is covered as associated data
+    expect(open(tampered, ring).ok).toBe(false);
   });
 
   it('an envelope sealed to one service is opaque to another', () => {
@@ -77,8 +73,7 @@ describe('problem 1: a carrier cannot read or alter the payment', () => {
 
   it('stays small enough for a constrained link', () => {
     // 44 header + 199 signed instruction + 16 tag, for these VPAs. RSA-2048, which the reference
-    // used, adds 256 bytes of key wrap on its own. The exact size is pinned so that growing the
-    // envelope is a decision rather than an accident.
+    // used, adds 256 bytes of key wrap on its own. Pinned so growth is a decision, not an accident.
     expect(sealed().length).toBe(259);
   });
 });
@@ -92,7 +87,7 @@ describe('problem 2: many copies of one payment are recognisably one payment', (
     expect(fingerprint(first)).not.toBe(fingerprint(second));
 
     const [a, b] = [open(first, ring), open(second, ring)];
-    if (!a.ok || !b.ok) throw new Error('both copies must open');
+    expect(a.ok && b.ok).toBe(true);
     expect(idempotencyKey(a.signed.instruction)).toBe(idempotencyKey(b.signed.instruction));
   });
 });
@@ -101,15 +96,13 @@ describe('problem 3: a stored envelope cannot be turned into a different payment
   it('a signature from the wrong device is rejected even though it decrypts', () => {
     const mallory = DeviceIdentity.generate();
     const forged = { ...signInstruction(mallory, instruction), devicePublicKey: alicePhone.publicKey };
-    const wire = encodeEnvelope(sealSigned(forged, ring.current().publicKey, KEY_ID));
-    expectFailure(open(wire, ring), 'BAD_SIGNATURE');
+    expectFailure(open(encodeEnvelope(sealSigned(forged, ring.current().publicKey, KEY_ID)), ring), 'BAD_SIGNATURE');
   });
 
   it('a changed amount does not survive the signature check', () => {
     const signed = signInstruction(alicePhone, instruction);
     const inflated = { ...signed, instruction: { ...instruction, amountPaise: 5_000_000 } };
-    const wire = encodeEnvelope(sealSigned(inflated, ring.current().publicKey, KEY_ID));
-    expectFailure(open(wire, ring), 'BAD_SIGNATURE');
+    expectFailure(open(encodeEnvelope(sealSigned(inflated, ring.current().publicKey, KEY_ID)), ring), 'BAD_SIGNATURE');
   });
 });
 
@@ -122,7 +115,7 @@ describe('malformed input and key rotation', () => {
     expectFailure(open(wire, ring), 'MALFORMED');
   });
 
-  it('truncation anywhere is MALFORMED or DECRYPT_FAILED, never a crash', () => {
+  it('truncation anywhere is refused, never a crash', () => {
     const wire = sealed();
     for (let length = 0; length < wire.length; length++) {
       expect(open(wire.subarray(0, length), ring).ok).toBe(false);

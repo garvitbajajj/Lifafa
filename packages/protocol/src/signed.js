@@ -1,7 +1,7 @@
-import { type Bytes, concat, utf8 } from './bytes.ts';
-import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.ts';
-import { type DeviceIdentity, deviceIdOf, verifySignature } from './identity.ts';
-import { type PaymentInstruction, decodeInstruction, encodeInstruction } from './instruction.ts';
+import { concat, utf8 } from './bytes.js';
+import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.js';
+import { deviceIdOf, verifySignature } from './identity.js';
+import { decodeInstruction, encodeInstruction } from './instruction.js';
 
 /**
  * Prefixed to everything a device signs, so a signature over a payment can never be replayed as
@@ -9,15 +9,16 @@ import { type PaymentInstruction, decodeInstruction, encodeInstruction } from '.
  */
 const SIGNING_DOMAIN = utf8('lifafa/instruction/1\n');
 
-export interface SignedInstruction {
-  readonly instruction: PaymentInstruction;
-  readonly devicePublicKey: Bytes;
-  readonly signature: Bytes;
-}
+/**
+ * @typedef {object} SignedInstruction
+ * @property {import('./instruction.js').PaymentInstruction} instruction
+ * @property {Uint8Array} devicePublicKey 32 bytes
+ * @property {Uint8Array} signature       64 bytes
+ */
 
-const signingInput = (encoded: Bytes): Bytes => concat(SIGNING_DOMAIN, encoded);
+const signingInput = (encoded) => concat(SIGNING_DOMAIN, encoded);
 
-export function signInstruction(device: DeviceIdentity, instruction: PaymentInstruction): SignedInstruction {
+export function signInstruction(device, instruction) {
   return {
     instruction,
     devicePublicKey: device.publicKey,
@@ -25,17 +26,17 @@ export function signInstruction(device: DeviceIdentity, instruction: PaymentInst
   };
 }
 
-export const deviceIdOfSigned = (signed: SignedInstruction): string => deviceIdOf(signed.devicePublicKey);
+export const deviceIdOfSigned = (signed) => deviceIdOf(signed.devicePublicKey);
 
 /**
  * Proves only that the holder of devicePublicKey signed this. Whether that key may pay from
  * senderVpa is a separate question the settlement service answers from its device registry.
  */
-export function hasValidSignature(signed: SignedInstruction): boolean {
+export function hasValidSignature(signed) {
   return verifySignature(signed.devicePublicKey, signingInput(encodeInstruction(signed.instruction)), signed.signature);
 }
 
-export function encodeSigned(signed: SignedInstruction): Bytes {
+export function encodeSigned(signed) {
   return new CanonicalWriter()
     .bytes(signed.devicePublicKey)
     .bytes(signed.signature)
@@ -43,7 +44,7 @@ export function encodeSigned(signed: SignedInstruction): Bytes {
     .toBytes();
 }
 
-export function decodeSigned(bytes: Bytes): SignedInstruction {
+export function decodeSigned(bytes) {
   const reader = new CanonicalReader(bytes);
   const devicePublicKey = reader.bytes();
   const signature = reader.bytes();

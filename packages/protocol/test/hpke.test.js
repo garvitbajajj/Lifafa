@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { hex, unhex } from '../src/bytes.ts';
-import * as aead from '../src/crypto/aead.ts';
-import * as hpke from '../src/crypto/hpke.ts';
+import { hex, unhex } from '../src/bytes.js';
+import * as aead from '../src/crypto/aead.js';
+import * as hpke from '../src/crypto/hpke.js';
 
 /**
  * RFC 9180 appendix A.1: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, base mode.

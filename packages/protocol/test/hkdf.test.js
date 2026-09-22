@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hex, unhex } from '../src/bytes.ts';
-import { expand, extract } from '../src/crypto/hkdf.ts';
+import { hex, unhex } from '../src/bytes.js';
+import { expand, extract } from '../src/crypto/hkdf.js';
 
 // RFC 5869 appendix A, the three SHA-256 test cases. Published values, not ours.
 const cases = [

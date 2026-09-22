@@ -6,7 +6,8 @@
 only the settlement service can open, hands it to whatever phone is nearby, and it hops from phone
 to phone until one of them reaches the network and delivers it.
 
-TypeScript on Node 22, with PostgreSQL, Express and React.
+JavaScript on Node 22, with PostgreSQL, Express and React. No build step: the code that runs is
+the code in the repository.
 An earlier implementation in Java and Spring Boot is at
 [garvitbajajj/Lifafa1.0](https://github.com/garvitbajajj/Lifafa1.0).
 
@@ -146,10 +147,8 @@ npm install
 ```
 
 ```bash
-npm run check
+npm test
 ```
-
-`check` type-checks the workspace and runs the full test suite.
 
 ## Scope
 

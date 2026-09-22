@@ -1,18 +1,9 @@
-import { type Bytes, utf8 } from './bytes.ts';
-import { MalformedError } from './canonical.ts';
-import * as aead from './crypto/aead.ts';
-import * as hpke from './crypto/hpke.ts';
-import {
-  type Envelope,
-  SUITE_HPKE_X25519_AES256GCM_ED25519,
-  VERSION_1,
-  decodeEnvelope,
-  header,
-} from './envelope.ts';
-import type { DeviceIdentity } from './identity.ts';
-import type { PaymentInstruction } from './instruction.ts';
-import type { ServerKeyRing } from './keyring.ts';
-import { type SignedInstruction, decodeSigned, encodeSigned, hasValidSignature, signInstruction } from './signed.ts';
+import { utf8 } from './bytes.js';
+import { MalformedError } from './canonical.js';
+import * as aead from './crypto/aead.js';
+import * as hpke from './crypto/hpke.js';
+import { SUITE_HPKE_X25519_AES256GCM_ED25519, VERSION_1, decodeEnvelope, header } from './envelope.js';
+import { decodeSigned, encodeSigned, hasValidSignature, signInstruction } from './signed.js';
 
 const SUITE = hpke.X25519_SHA256_AES256GCM;
 
@@ -28,12 +19,7 @@ const INFO = utf8('lifafa/envelope/1');
  *
  * Signing first puts the signature inside the encryption, so carriers cannot see who is paying.
  */
-export function seal(
-  instruction: PaymentInstruction,
-  device: DeviceIdentity,
-  serverPublicKey: Bytes,
-  serverKeyId: number,
-): Envelope {
+export function seal(instruction, device, serverPublicKey, serverKeyId) {
   return sealSigned(signInstruction(device, instruction), serverPublicKey, serverKeyId);
 }
 
@@ -41,7 +27,7 @@ export function seal(
  * Seals an already-signed instruction. Separate so a test can seal one signature twice - which
  * produces two different envelopes for one payment, the case ciphertext deduplication misses.
  */
-export function sealSigned(signed: SignedInstruction, serverPublicKey: Bytes, serverKeyId: number): Envelope {
+export function sealSigned(signed, serverPublicKey, serverKeyId) {
   const { enc, sharedSecret } = hpke.encapsulate(SUITE, serverPublicKey);
   const shell = { version: VERSION_1, suite: SUITE_HPKE_X25519_AES256GCM_ED25519, serverKeyId, enc };
   const context = hpke.keySchedule(SUITE, sharedSecret, INFO);
@@ -50,22 +36,13 @@ export function sealSigned(signed: SignedInstruction, serverPublicKey: Bytes, se
 }
 
 /**
- * Why an envelope could not be opened. All permanent: retrying the same bytes can never succeed,
- * so a bridge told any of these should drop the envelope rather than carry it forever.
+ * Why an envelope could not be opened: MALFORMED, UNSUPPORTED, UNKNOWN_SERVER_KEY, DECRYPT_FAILED,
+ * MALFORMED_PLAINTEXT or BAD_SIGNATURE.
+ *
+ * All permanent: retrying the same bytes can never succeed, so a bridge told any of these should
+ * drop the envelope rather than carry it forever.
  */
-export type FailureReason =
-  | 'MALFORMED'
-  | 'UNSUPPORTED'
-  | 'UNKNOWN_SERVER_KEY'
-  | 'DECRYPT_FAILED'
-  | 'MALFORMED_PLAINTEXT'
-  | 'BAD_SIGNATURE';
-
-export type OpenResult =
-  | { readonly ok: true; readonly signed: SignedInstruction; readonly envelope: Envelope }
-  | { readonly ok: false; readonly reason: FailureReason; readonly detail: string };
-
-const fail = (reason: FailureReason, detail: string): OpenResult => ({ ok: false, reason, detail });
+const fail = (reason, detail) => ({ ok: false, reason, detail });
 
 /**
  * Opens an envelope and checks the signature inside it.
@@ -73,13 +50,16 @@ const fail = (reason: FailureReason, detail: string): OpenResult => ({ ok: false
  * It does NOT decide whether the payment is allowed. Is the device registered to this VPA? Is it
  * fresh? Is there money? Those are policy, and they live in the settlement service. Keeping them
  * out of here is what lets this package run on a phone.
+ *
+ * @returns {{ok: true, signed: import('./signed.js').SignedInstruction, envelope: object}
+ *          | {ok: false, reason: string, detail: string}}
  */
-export function open(wire: Bytes, keyRing: ServerKeyRing): OpenResult {
-  let envelope: Envelope;
+export function open(wire, keyRing) {
+  let envelope;
   try {
     envelope = decodeEnvelope(wire);
   } catch (error) {
-    return fail('MALFORMED', (error as Error).message);
+    return fail('MALFORMED', error.message);
   }
   if (envelope.version !== VERSION_1) return fail('UNSUPPORTED', `version ${envelope.version}`);
   if (envelope.suite !== SUITE_HPKE_X25519_AES256GCM_ED25519) return fail('UNSUPPORTED', `suite ${envelope.suite}`);
@@ -90,14 +70,14 @@ export function open(wire: Bytes, keyRing: ServerKeyRing): OpenResult {
   const serverKey = keyRing.lookup(envelope.serverKeyId);
   if (!serverKey) return fail('UNKNOWN_SERVER_KEY', `no server key with id ${envelope.serverKeyId}`);
 
-  let sharedSecret: Bytes;
+  let sharedSecret;
   try {
     sharedSecret = hpke.decapsulate(SUITE, serverKey.privateKey, envelope.enc);
   } catch (error) {
-    return fail('MALFORMED', `unusable key encapsulation: ${(error as Error).message}`);
+    return fail('MALFORMED', `unusable key encapsulation: ${error.message}`);
   }
 
-  let plaintext: Bytes;
+  let plaintext;
   try {
     const context = hpke.keySchedule(SUITE, sharedSecret, INFO);
     plaintext = aead.open(context.key, hpke.nonce(context.baseNonce, 0), header(envelope), envelope.ciphertext);
@@ -105,12 +85,11 @@ export function open(wire: Bytes, keyRing: ServerKeyRing): OpenResult {
     return fail('DECRYPT_FAILED', 'GCM tag did not verify');
   }
 
-  let signed: SignedInstruction;
+  let signed;
   try {
     signed = decodeSigned(plaintext);
   } catch (error) {
-    const detail = error instanceof MalformedError ? error.message : 'unreadable plaintext';
-    return fail('MALFORMED_PLAINTEXT', detail);
+    return fail('MALFORMED_PLAINTEXT', error instanceof MalformedError ? error.message : 'unreadable plaintext');
   }
 
   if (!hasValidSignature(signed)) return fail('BAD_SIGNATURE', 'the signature does not match the device key');

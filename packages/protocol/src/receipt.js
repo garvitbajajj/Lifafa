@@ -1,32 +1,24 @@
-import { type Bytes, concat, utf8 } from './bytes.ts';
-import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.ts';
-import { verifySignature } from './identity.ts';
+import { concat, utf8 } from './bytes.js';
+import { CanonicalReader, CanonicalWriter, MalformedError } from './canonical.js';
+import { verifySignature } from './identity.js';
 
 /**
  * The service's signed answer: this payment was settled, or refused and why.
  *
  * Signed so it can travel back through the same untrusted phones that carried the payment, and
- * the payer can check it came from the service. (Carrying it back is not built yet - see the
- * threat model. The service does issue and store them.)
+ * the payer can check it came from the service.
+ *
+ * @typedef {object} Receipt
+ * @property {string} idempotencyKey
+ * @property {'SETTLED'|'REJECTED'} outcome
+ * @property {string} reason         why it was refused; empty when settled
+ * @property {number} journalEntryId the ledger entry that moved the money; 0 when refused
+ * @property {number} decidedAt
  */
-export interface Receipt {
-  readonly idempotencyKey: string;
-  readonly outcome: 'SETTLED' | 'REJECTED';
-  /** Why it was refused; empty when settled. */
-  readonly reason: string;
-  /** The ledger entry that moved the money; 0 when refused. */
-  readonly journalEntryId: number;
-  readonly decidedAt: number;
-}
-
-export interface SignedReceipt {
-  readonly receipt: Receipt;
-  readonly signature: Bytes;
-}
 
 const RECEIPT_DOMAIN = utf8('lifafa/receipt/1\n');
 
-export function encodeReceipt(receipt: Receipt): Bytes {
+export function encodeReceipt(receipt) {
   return new CanonicalWriter()
     .string(receipt.idempotencyKey)
     .u8(receipt.outcome === 'SETTLED' ? 1 : 2)
@@ -36,12 +28,12 @@ export function encodeReceipt(receipt: Receipt): Bytes {
     .toBytes();
 }
 
-export function decodeReceipt(bytes: Bytes): Receipt {
+export function decodeReceipt(bytes) {
   const reader = new CanonicalReader(bytes);
   const idempotencyKey = reader.string();
   const outcomeCode = reader.u8();
   if (outcomeCode !== 1 && outcomeCode !== 2) throw new MalformedError(`unknown receipt outcome ${outcomeCode}`);
-  const receipt: Receipt = {
+  const receipt = {
     idempotencyKey,
     outcome: outcomeCode === 1 ? 'SETTLED' : 'REJECTED',
     reason: reader.string(),
@@ -52,10 +44,10 @@ export function decodeReceipt(bytes: Bytes): Receipt {
   return receipt;
 }
 
-export function signReceipt(signer: { sign(message: Bytes): Bytes }, receipt: Receipt): SignedReceipt {
+export function signReceipt(signer, receipt) {
   return { receipt, signature: signer.sign(concat(RECEIPT_DOMAIN, encodeReceipt(receipt))) };
 }
 
-export function verifyReceipt(servicePublicKey: Bytes, signed: SignedReceipt): boolean {
+export function verifyReceipt(servicePublicKey, signed) {
   return verifySignature(servicePublicKey, concat(RECEIPT_DOMAIN, encodeReceipt(signed.receipt)), signed.signature);
 }
