@@ -1,0 +1,15 @@
+{
+  "name": "@lifafa/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The settlement service: ledger, claims and the HTTP API.",
+  "main": "./src/index.js",
+  "scripts": {
+    "migrate": "node src/db/migrate.js"
+  },
+  "dependencies": {
+    "@lifafa/protocol": "*",
+    "pg": "^8.13.1"
+  }
+}

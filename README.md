@@ -136,7 +136,8 @@ before a key rotation still opens afterwards, and stops only once that key is re
 
 | Path | Contents |
 |---|---|
-| `packages/protocol` | The envelope format and its cryptography — HPKE, Ed25519 signatures, canonical encoding, the key ring and signed receipts. No dependencies beyond `node:crypto`, so it could be ported to a phone. 50 tests. |
+| `packages/protocol` | The envelope format and its cryptography — HPKE, Ed25519 signatures, canonical encoding, the key ring and signed receipts. No dependencies beyond `node:crypto`, so it could be ported to a phone. |
+| `apps/server` | The settlement service. So far: the schema and migrations, and the double-entry ledger with its invariant check. |
 
 ## Running it
 
@@ -149,6 +150,21 @@ npm install
 ```bash
 npm test
 ```
+
+The ledger tests need a PostgreSQL. With `DATABASE_URL` set they use that one; without it they start a
+throwaway PostgreSQL on the machine and drop it afterwards, so the suite runs offline with nothing
+installed. Either way each run works in a schema of its own, so it never touches other data.
+
+### Pointing it at a database
+
+Copy `.env.example` to `.env` and set `DATABASE_URL` — Supabase, or any PostgreSQL — then:
+
+```bash
+npm run migrate
+```
+
+Every table lives in the `lifafa` schema, so the database can be shared with other projects. On
+Supabase that also keeps these tables out of the auto-generated API, which only exposes `public`.
 
 ## Scope
 
