@@ -31,11 +31,23 @@ export async function startTestDatabase() {
   };
 }
 
+/** A port the operating system says is free right now, so parallel test files cannot collide. */
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
 async function startLocalPostgres() {
   const { default: EmbeddedPostgres } = await import('embedded-postgres');
   const directory = await mkdtemp(join(tmpdir(), 'lifafa-pg-'));
-  // A random high port, so two test files can run at once without fighting over one.
-  const port = 55000 + Math.floor(Math.random() * 5000);
+  const port = await freePort();
   const postgres = new EmbeddedPostgres({
     databaseDir: directory,
     user: 'lifafa',

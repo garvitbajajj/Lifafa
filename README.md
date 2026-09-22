@@ -137,7 +137,7 @@ before a key rotation still opens afterwards, and stops only once that key is re
 | Path | Contents |
 |---|---|
 | `packages/protocol` | The envelope format and its cryptography — HPKE, Ed25519 signatures, canonical encoding, the key ring and signed receipts. No dependencies beyond `node:crypto`, so it could be ported to a phone. |
-| `apps/server` | The settlement service. So far: the schema and migrations, and the double-entry ledger with its invariant check. |
+| `apps/server` | The settlement service: schema and migrations, the double-entry ledger, claims on payment intents, the device registry and offline limits, the ingest pipeline, signed receipts, and the HTTP API bridges and operators use. |
 
 ## Running it
 
@@ -165,6 +165,32 @@ npm run migrate
 
 Every table lives in the `lifafa` schema, so the database can be shared with other projects. On
 Supabase that also keeps these tables out of the auto-generated API, which only exposes `public`.
+
+## API
+
+Two audiences with different credentials. Only the settlement key and ingest are public, because
+devices and bridges have no operator credentials.
+
+| Route | Who | Purpose |
+|---|---|---|
+| `GET /api/settlement-key` | anyone | The current public key and its id, fetched by a phone while it still has signal |
+| `POST /api/bridge/ingest` | bridges | Deliver one envelope |
+| `POST /api/admin/accounts` · `/accounts/:vpa/fund` | operator | Open an account; fund it, idempotently on the operator's reference |
+| `POST /api/admin/devices` · `/devices/:id/top-up` · `/devices/:id/revoke` | operator | Bind a device to an account, refill its offline allowance, revoke it |
+| `POST /api/admin/bridges` | operator | Provision a bridge; its key is returned once and only a hash is stored |
+| `POST /api/admin/keys/rotate` | operator | Add a new settlement key; older ones keep opening what was sealed to them |
+| `GET /api/accounts` · `/journal` · `/claims` · `/attempts` · `/devices` · `/receipts` · `/invariants` | operator | Inspection |
+| `GET /health` | anyone | Liveness |
+
+The status code tells a bridge what to do with its copy, which is the only thing it can act on:
+
+| Status | Meaning | The bridge should |
+|---|---|---|
+| `200` | Decided — settled or refused, possibly a replay of an earlier decision | forget it |
+| `202` | Another delivery is deciding this payment right now | keep it and retry |
+| `422` | These bytes can never be a valid payment | drop it |
+| `400` / `401` / `429` | Bad request, bad credentials, too many requests | fix, authenticate, back off |
+| `503` | Transient failure; the claim was released | keep it and retry |
 
 ## Scope
 
