@@ -199,8 +199,11 @@ describe('delivering a payment', () => {
         body: JSON.stringify({ envelopeBase64: b64(Buffer.from('garbage')) }),
       });
 
+    // Ten requests against a limit of three. The window is per minute, so a run that straddles a
+    // minute boundary splits them - but ten across two windows puts at least five in one of them,
+    // so a 429 is guaranteed either way. Five requests were not: two and three pass both windows.
     const statuses = [];
-    for (let i = 0; i < 5; i++) statuses.push((await send()).status);
+    for (let i = 0; i < 10; i++) statuses.push((await send()).status);
     await new Promise((resolve) => throttled.close(resolve));
 
     expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
