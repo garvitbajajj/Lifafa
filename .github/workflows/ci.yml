@@ -29,8 +29,18 @@ jobs:
       - run: npm ci
 
       - name: Test suite
-        # The github-actions reporter turns each failure into an annotation on the run.
-        run: npx vitest run --reporter=default --reporter=github-actions
+        env:
+          NO_COLOR: '1'
+        # Failed tests become annotations through the github-actions reporter. Anything that fails
+        # outside a test - an error during teardown, say - does not, so on failure the tail of the
+        # output is surfaced as an annotation too: annotations are readable without a login.
+        run: |
+          if ! npx vitest run --reporter=default --reporter=github-actions > vitest.log 2>&1; then
+            cat vitest.log
+            echo "::error title=vitest failed::$(tail -80 vitest.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
+          cat vitest.log
 
       # The command the README tells people to run, proven to work - not just the code behind it.
       - name: Every attack scenario through the command line
