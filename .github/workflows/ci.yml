@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Everything a reviewer would otherwise have to take on trust: the RFC test vectors, the ledger
+  # and claim guarantees against a real PostgreSQL, the HTTP contract, and every named attack.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test suite
+        run: npm test
+
+      # The command the README tells people to run, proven to work - not just the code behind it.
+      - name: Every attack scenario through the command line
+        run: npm run scenarios -- all
+
+      - name: Build the dashboard
+        run: npm run build
