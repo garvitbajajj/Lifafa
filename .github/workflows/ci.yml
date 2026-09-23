@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -29,7 +29,8 @@ jobs:
       - run: npm ci
 
       - name: Test suite
-        run: npm test
+        # The github-actions reporter turns each failure into an annotation on the run.
+        run: npx vitest run --reporter=default --reporter=github-actions
 
       # The command the README tells people to run, proven to work - not just the code behind it.
       - name: Every attack scenario through the command line
