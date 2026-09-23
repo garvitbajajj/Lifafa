@@ -17,7 +17,10 @@ export async function startLocalPostgres() {
     user: 'lifafa',
     password: 'lifafa',
     port,
-    persistent: false,
+    // Keep the library from deleting the folder itself: it does so inside stop() with no retry,
+    // which on Windows fails with EBUSY while the server is still letting go of its files.
+    // stop() below removes it instead, patiently.
+    persistent: true,
   });
 
   await postgres.initialise();
@@ -27,7 +30,10 @@ export async function startLocalPostgres() {
     connectionString: `postgresql://lifafa:lifafa@127.0.0.1:${port}/postgres`,
     async stop() {
       await postgres.stop();
-      await rm(directory, { recursive: true, force: true });
+      // On Windows the server process keeps its files open for a moment after stop() resolves, so
+      // deleting the folder straight away fails with EBUSY. Retry briefly, then leave it: a stray
+      // folder in the temp directory must never fail a test run.
+      await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
     },
   };
 }
