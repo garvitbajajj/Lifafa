@@ -7,7 +7,9 @@
   "main": "./src/index.js",
   "scripts": {
     "migrate": "node src/db/migrate.js",
-    "scenarios": "node src/scenarios/run.js"
+    "scenarios": "node src/scenarios/run.js",
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
   },
   "dependencies": {
     "@lifafa/protocol": "*",

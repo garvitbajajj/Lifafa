@@ -278,6 +278,11 @@ describe('operator routes', () => {
   it('returns 404 for an unknown route rather than an error page', async () => {
     expect((await call('/api/nope')).status).toBe(404);
   });
+
+  it('does not mount the demo mesh outside demo mode: it signs payments for demo phones', async () => {
+    expect((await call('/api/demo/state')).status).toBe(404);
+    expect((await asAdmin('/api/demo/compose', { method: 'POST', body: {} })).status).toBe(404);
+  });
 });
 
 describe('key rotation', () => {

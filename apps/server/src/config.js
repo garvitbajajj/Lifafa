@@ -18,7 +18,7 @@ export function loadConfig(env = process.env) {
   return {
     demo,
     adminToken,
-    port: Number(env.PORT ?? 3000),
+    port: Number(env.PORT ?? 3100),
     /** Requests one bridge may make per minute, per instance. */
     bridgeRatePerMinute: Number(env.LIFAFA_BRIDGE_RATE ?? 600),
   };

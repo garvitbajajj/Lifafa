@@ -137,15 +137,38 @@ before a key rotation still opens afterwards, and stops only once that key is re
 | Path | Contents |
 |---|---|
 | `packages/protocol` | The envelope format and its cryptography — HPKE, Ed25519 signatures, canonical encoding, the key ring and signed receipts. No dependencies beyond `node:crypto`, so it could be ported to a phone. |
+| `packages/mesh` | Simulated phones: a device agent that signs and seals payments, and a mesh that gossips envelopes hop by hop with packet loss and partitions. Seeded, so every run can be reproduced. |
 | `apps/server` | The settlement service: schema and migrations, the double-entry ledger, claims on payment intents, the device registry and offline limits, the ingest pipeline, signed receipts, and the HTTP API bridges and operators use. |
+| `apps/web` | The React dashboard: watch a payment cross the mesh and settle. |
 
 ## Running it
 
 Requires Node.js 22 or newer.
 
+### The dashboard
+
 ```bash
 npm install
 ```
+
+```bash
+npm run demo
+```
+
+Then open <http://127.0.0.1:3100>. With no `DATABASE_URL` the demo starts its own throwaway
+PostgreSQL, so nothing else needs installing.
+
+Five phones stand in a line — Alice's, two strangers, and two bridges with internet. **Sign a
+payment** puts an envelope on Alice's phone; **Gossip** moves it one hop; after four rounds both
+bridges hold it, and **Deliver** has them upload it at the same moment. One settles it, the other
+gets that decision back, and the money moves once. **Double spend** signs two payments against one
+balance; the second is refused and the phone revoked. **Partition mesh** cuts Alice off until it
+heals; **Rotate key** changes the settlement key while envelopes are still in flight.
+
+The demo signs payments on behalf of the demo phones and leaves the operator routes open. That is
+what makes it a demo: never run a real deployment with `--demo`.
+
+### Tests
 
 ```bash
 npm test

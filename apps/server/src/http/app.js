@@ -1,4 +1,5 @@
 import { b64, deviceIdOf, unb64 } from '@lifafa/protocol';
+import { existsSync } from 'node:fs';
 import express from 'express';
 import * as claims from '../claims.js';
 import { withTransaction } from '../db/pool.js';
@@ -8,6 +9,7 @@ import { checkInvariants, fund, openAccount } from '../ledger.js';
 import * as receipts from '../receipts.js';
 import { registerDevice, revoke, topUpAllowance } from '../registry.js';
 import { createRateLimiter, newBridgeKey, requireAdmin, requireBridge } from './auth.js';
+import { createDemo } from './demo.js';
 
 /**
  * The HTTP surface. Two audiences, with different credentials:
@@ -18,9 +20,13 @@ import { createRateLimiter, newBridgeKey, requireAdmin, requireBridge } from './
  * Only the settlement key and the ingest endpoint are public, and both are needed by devices and
  * bridges that have no operator credentials.
  */
-export function createApp({ pool, keys, config }) {
+export function createApp({ pool, keys, config, webRoot }) {
   const app = express();
   app.use(express.json({ limit: '32kb' }));
+
+  // The built dashboard, when there is one. Serving it from the same process keeps the demo to a
+  // single command; in development Vite serves it instead and proxies /api here.
+  if (webRoot && existsSync(webRoot)) app.use(express.static(webRoot));
 
   const limiter = createRateLimiter();
   const admin = requireAdmin(config);
@@ -198,6 +204,10 @@ export function createApp({ pool, keys, config }) {
   app.get('/api/invariants', admin, async (_req, res) => {
     res.json(await checkInvariants(pool));
   });
+
+  // The simulated mesh behind the dashboard. Demo mode only: it signs payments for demo phones,
+  // which a real deployment must never do.
+  if (config.demo) app.use('/api/demo', createDemo({ pool, keys }));
 
   app.get('/health', async (_req, res) => {
     try {
