@@ -1,5 +1,7 @@
 # Lifafa
 
+[![ci](https://github.com/garvitbajajj/Lifafa/actions/workflows/ci.yml/badge.svg)](https://github.com/garvitbajajj/Lifafa/actions/workflows/ci.yml)
+
 **Offline UPI-style payments carried over a mesh of nearby phones, settled exactly once.**
 
 *Lifafa* (लिफ़ाफ़ा) means envelope. A payer with no internet seals a payment into an envelope that
@@ -256,6 +258,22 @@ Bluetooth transport; the mesh is simulated. The cryptography follows RFC 9180 an
 vectors, but it is a from-scratch composition of primitives that no third party has reviewed, and
 it does not provide forward secrecy: anyone who records envelopes and later obtains the service's
 private key can read them, which is inherent to a payer who cannot run an interactive key exchange.
+
+[THREAT_MODEL.md](THREAT_MODEL.md) lists every defence with the test that proves it, and every
+known limitation. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
+
+## Design decisions
+
+Each records the context, the decision and what it costs.
+
+| | |
+|---|---|
+| [0001](docs/adr/0001-store-and-forward-deferred-settlement.md) | Carry signed instructions and settle them later, rather than holding value on the phone |
+| [0002](docs/adr/0002-hpke-not-rsa.md) | HPKE, verified against the RFC's test vectors, instead of RSA key wrapping |
+| [0003](docs/adr/0003-claim-the-payment-intent.md) | A durable, leased claim on the payment intent — and why it needs a holder id |
+| [0004](docs/adr/0004-double-entry-ledger-in-paise.md) | A double-entry ledger in integer paise, with the database enforcing what matters most |
+| [0005](docs/adr/0005-bounded-offline-risk.md) | Bound offline double-spend instead of pretending to prevent it |
+| [0006](docs/adr/0006-postgres-with-plain-sql.md) | PostgreSQL through plain SQL, one connection per transaction, in plain JavaScript |
 
 ## Licence
 
