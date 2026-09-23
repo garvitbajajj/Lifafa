@@ -19,7 +19,18 @@ export const schemaName = () => process.env.DB_SCHEMA ?? 'lifafa';
 
 export function createPool(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error('DATABASE_URL is not set');
-  return new pg.Pool({ connectionString, options: `-c search_path=${schemaName()}` });
+  const pool = new pg.Pool({ connectionString, options: `-c search_path=${schemaName()}` });
+
+  // An idle connection the database drops - a restart, a failover, Supabase recycling it - emits
+  // 'error'. With no listener, Node treats that as an uncaught exception and kills the process:
+  // one database restart would take the whole service down. The pool discards the dead
+  // connection and opens a new one on the next query, so logging it is all that is needed.
+  pool.on('error', (error) => console.error(`database connection lost: ${error.message}`));
+  // A connection being closed can still receive the server's goodbye after the pool has let go of
+  // it. It is on its way out anyway; the error means nothing.
+  pool.on('connect', (client) => client.on('error', () => {}));
+
+  return pool;
 }
 
 /**
