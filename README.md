@@ -176,6 +176,9 @@ what makes it a demo: never run a real deployment with `--demo`.
 npm test
 ```
 
+142 tests across 11 files: the RFC vectors, the envelope's guarantees, the ledger and the claims,
+the HTTP contract, and the mesh.
+
 The ledger tests need a PostgreSQL. With `DATABASE_URL` set they use that one; without it they start a
 throwaway PostgreSQL on the machine and drop it afterwards, so the suite runs offline with nothing
 installed. Either way each run works in a schema of its own, so it never touches other data.
