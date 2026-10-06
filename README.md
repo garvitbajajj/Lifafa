@@ -8,8 +8,8 @@
 only the settlement service can open, hands it to whatever phone is nearby, and it hops from phone
 to phone until one of them reaches the network and delivers it.
 
-JavaScript on Node 22, with PostgreSQL, Express and React. No build step: the code that runs is
-the code in the repository.
+JavaScript on Node 22, with PostgreSQL, Express and React. No build step for the server: the code
+that runs is the code in the repository. Runs directly with Node, or in Docker.
 An earlier implementation in Java and Spring Boot is at
 [garvitbajajj/Lifafa1.0](https://github.com/garvitbajajj/Lifafa1.0).
 
@@ -87,10 +87,14 @@ ciphertext instead would miss the common case: re-sealing one payment uses a fre
 so every byte on the wire differs.
 
 Settlement is a durable two-phase claim. The first delivery to arrive claims the intent in the
-database under a short lease; the ledger postings and the decision commit in one transaction, so a
-crash cannot leave a half-payment behind. Later copies receive the decision that was already made.
-A transient failure releases the claim, and an expired lease can be taken over, so a process dying
-mid-settlement delays a payment rather than losing it. The journal carries a unique constraint on
+database under a 30-second lease; the ledger postings and the decision commit in one transaction,
+so a crash cannot leave a half-payment behind. Later copies receive the decision that was already
+made. A transient failure releases the claim, and an expired lease can be taken over, so a process
+dying mid-settlement delays a payment rather than losing it.
+
+Every claim carries a holder id, and only the current holder can decide. A test found why: after a
+takeover the claim is in progress again, so a delivery that stalled past its lease could otherwise
+wake up and overwrite the decision of whoever took over. The journal carries a unique constraint on
 the idempotency key as a last line of defence, so even a bug in the claim layer cannot post twice.
 
 ### Integrity of the money: a double-entry ledger in paise
@@ -142,6 +146,8 @@ before a key rotation still opens afterwards, and stops only once that key is re
 | `packages/mesh` | Simulated phones: a device agent that signs and seals payments, and a mesh that gossips envelopes hop by hop with packet loss and partitions. Seeded, so every run can be reproduced. |
 | `apps/server` | The settlement service: schema and migrations, the double-entry ledger, claims on payment intents, the device registry and offline limits, the ingest pipeline, signed receipts, and the HTTP API bridges and operators use. |
 | `apps/web` | The React dashboard: watch a payment cross the mesh and settle. |
+| `Dockerfile` · `docker-compose.yml` | The service and dashboard in one image, run as an unprivileged user, beside its own PostgreSQL. |
+| `docs/adr` · `THREAT_MODEL.md` | Why each design decision was made, and what is and is not defended. |
 
 ## Running it
 
@@ -170,6 +176,28 @@ heals; **Rotate key** changes the settlement key while envelopes are still in fl
 The demo signs payments on behalf of the demo phones and leaves the operator routes open. That is
 what makes it a demo: never run a real deployment with `--demo`.
 
+### With Docker
+
+The same dashboard, with the service in a container beside its own PostgreSQL:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build
+```
+
+Then open <http://127.0.0.1:3100>.
+
+Without the demo override, Compose runs the deployment configuration: no demo accounts, no
+simulated mesh, and every operator route behind a token. **It refuses to start without one** — set
+`LIFAFA_ADMIN_TOKEN` to at least 24 random characters, in `.env` or the shell, then:
+
+```bash
+docker compose up --build
+```
+
+The settlement keys live in the database, so they survive the container being replaced — but
+losing the `pgdata` volume makes every envelope sealed to them unreadable. Docker is optional:
+everything else in this README runs with Node alone.
+
 ### Tests
 
 ```bash
@@ -182,6 +210,8 @@ the HTTP contract, and the mesh.
 The ledger tests need a PostgreSQL. With `DATABASE_URL` set they use that one; without it they start a
 throwaway PostgreSQL on the machine and drop it afterwards, so the suite runs offline with nothing
 installed. Either way each run works in a schema of its own, so it never touches other data.
+
+CI runs the suite, every attack scenario, the dashboard build, and the container on each push.
 
 ### Pointing it at a database
 

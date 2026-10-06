@@ -1,0 +1,43 @@
+# Lifafa on PostgreSQL, in the deployment configuration.
+#
+#   LIFAFA_ADMIN_TOKEN=<24+ random characters> docker compose up --build
+#
+# Demo mode is off: no demo accounts, no simulated mesh, and every operator route requires the
+# token. Without LIFAFA_ADMIN_TOKEN the service refuses to start and says why - that refusal is
+# the point, not a misconfiguration to work around.
+#
+# For the dashboard demo, layer the demo override on top:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: lifafa
+      POSTGRES_USER: lifafa
+      POSTGRES_PASSWORD: ${LIFAFA_DB_PASSWORD:-lifafa}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifafa -d lifafa"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3100}:3100"
+    environment:
+      PORT: 3100
+      DATABASE_URL: postgresql://lifafa:${LIFAFA_DB_PASSWORD:-lifafa}@postgres:5432/lifafa
+      LIFAFA_ADMIN_TOKEN: ${LIFAFA_ADMIN_TOKEN:-}
+
+volumes:
+  # The settlement keys live in the database, so this volume holds them too. Losing it makes every
+  # envelope sealed to this instance permanently unreadable.
+  pgdata:

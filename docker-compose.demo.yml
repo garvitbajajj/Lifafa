@@ -1,0 +1,12 @@
+# Demo override: demo accounts, the simulated mesh, and an open dashboard.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build
+#   open http://127.0.0.1:3100
+#
+# Never use this anywhere real. It signs payments on behalf of the demo phones and, with no token
+# set, leaves the operator routes open.
+
+services:
+  server:
+    environment:
+      LIFAFA_DEMO: "true"

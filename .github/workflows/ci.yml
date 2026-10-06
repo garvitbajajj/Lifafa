@@ -48,3 +48,55 @@ jobs:
 
       - name: Build the dashboard
         run: npm run build
+
+  # The container, run the way the README says to run it.
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the image
+        run: docker compose build
+
+      - name: Without an operator token, the service must refuse to start
+        run: |
+          LIFAFA_ADMIN_TOKEN='' docker compose up -d
+          for _ in $(seq 1 40); do
+            [ "$(docker compose ps -a --format '{{.State}}' server)" = "exited" ] && break
+            sleep 3
+          done
+          code=$(docker inspect -f '{{.State.ExitCode}}' "$(docker compose ps -aq server)")
+          docker compose logs server | grep -q "LIFAFA_ADMIN_TOKEN must be set" \
+            || { echo "::error::expected the missing-token refusal"; docker compose logs server; exit 1; }
+          [ "$code" != "0" ] || { echo "::error::the service started without an operator token"; exit 1; }
+          docker compose down -v
+
+      - name: With a token, it starts on PostgreSQL and keeps operator routes closed
+        env:
+          LIFAFA_ADMIN_TOKEN: ci-admin-token-0123456789abcdefghij
+        run: |
+          docker compose up -d
+          for _ in $(seq 1 40); do curl -fsS http://localhost:3100/health >/dev/null 2>&1 && break; sleep 3; done
+          curl -fsS http://localhost:3100/health | grep -q '"database":"PostgreSQL"'
+          curl -fsS -H "X-Admin-Token: $LIFAFA_ADMIN_TOKEN" http://localhost:3100/api/invariants | grep -q '"holds":true'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3100/api/accounts)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3100/api/demo/state)" = "404"
+          test "$(docker compose exec -T server id -un)" = "node"
+          docker compose down -v
+
+      - name: The demo override serves the dashboard and the simulated mesh
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+          for _ in $(seq 1 40); do curl -fsS http://localhost:3100/health >/dev/null 2>&1 && break; sleep 3; done
+          curl -fsS http://localhost:3100/ | grep -q '<div id="root">'
+          curl -fsS http://localhost:3100/api/demo/state | grep -q '"phone-alice"'
+
+      # Logs need a login to read and annotations do not, so surface them that way on failure.
+      - name: Service logs on failure
+        if: failure()
+        run: echo "::error title=container logs::$(docker compose logs server 2>&1 | tail -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
